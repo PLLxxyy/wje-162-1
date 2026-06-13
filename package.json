@@ -1,0 +1,14 @@
+{
+  "name": "garbage-sorting-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently -n server,client -c blue,green \"cd server && PORT=3212 npm run dev\" \"cd client && VITE_PORT=5182 VITE_API_PORT=3212 npm run dev\"",
+    "build": "npm run build --prefix client && npm run build --prefix server",
+    "start": "cd server && PORT=3212 npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
