@@ -24,29 +24,35 @@ const CATEGORY_NAMES: Record<string, string> = {
   other: '其他垃圾',
 };
 
-// 计算连续打卡天数
+// 计算连续打卡天数（包含补签卡填补的日期）
 function getConsecutiveDays(userId: number): number {
   const records = db.prepare(
     "SELECT DISTINCT checkin_date FROM checkin_records WHERE user_id = ? ORDER BY checkin_date DESC"
   ).all(userId) as { checkin_date: string }[];
 
-  if (records.length === 0) return 0;
+  const makeUpRecords = db.prepare(
+    "SELECT DISTINCT make_up_date FROM make_up_card_records WHERE user_id = ? AND type = 'use' AND make_up_date IS NOT NULL ORDER BY make_up_date DESC"
+  ).all(userId) as { make_up_date: string }[];
+
+  const allDates = new Set([
+    ...records.map((r) => r.checkin_date),
+    ...makeUpRecords.map((r) => r.make_up_date!),
+  ]);
+
+  if (allDates.size === 0) return 0;
 
   const today = getLocalDate();
-  const dates = records.map((r) => r.checkin_date);
-
-  // 从今天或昨天开始算连续
   let count = 0;
   let checkDate = new Date(today);
 
   // 如果今天没打卡，从昨天开始检查
-  if (!dates.includes(today)) {
+  if (!allDates.has(today)) {
     checkDate.setDate(checkDate.getDate() - 1);
   }
 
   for (let i = 0; i < 365; i++) {
     const dateStr = checkDate.toISOString().split('T')[0];
-    if (dates.includes(dateStr)) {
+    if (allDates.has(dateStr)) {
       count++;
       checkDate.setDate(checkDate.getDate() - 1);
     } else {
@@ -55,6 +61,75 @@ function getConsecutiveDays(userId: number): number {
   }
 
   return count;
+}
+
+// 自动使用补签卡填补缺卡日，返回使用的补签卡详情列表
+function autoUseMakeUpCards(userId: number): { date: string; used: number } {
+  const user = db.prepare('SELECT make_up_cards FROM users WHERE id = ?').get(userId) as { make_up_cards: number };
+  let cardsLeft = user.make_up_cards;
+  let usedCount = 0;
+  let usedDate: string | null = null;
+
+  if (cardsLeft <= 0) {
+    return { date: '', used: 0 };
+  }
+
+  // 获取所有打卡日期和补签日期
+  const records = db.prepare(
+    "SELECT DISTINCT checkin_date FROM checkin_records WHERE user_id = ? ORDER BY checkin_date DESC"
+  ).all(userId) as { checkin_date: string }[];
+
+  const makeUpRecords = db.prepare(
+    "SELECT DISTINCT make_up_date FROM make_up_card_records WHERE user_id = ? AND type = 'use' AND make_up_date IS NOT NULL"
+  ).all(userId) as { make_up_date: string }[];
+
+  const allDates = new Set([
+    ...records.map((r) => r.checkin_date),
+    ...makeUpRecords.map((r) => r.make_up_date!),
+  ]);
+
+  if (allDates.size === 0) {
+    return { date: '', used: 0 };
+  }
+
+  const today = getLocalDate();
+  const todayDate = new Date(today);
+
+  // 检查昨天是否缺卡（如果今天没打卡，则检查前天），如果缺卡且再前一天有打卡，就补
+  let checkDate = new Date(todayDate);
+  // 从昨天开始向前找
+  checkDate.setDate(checkDate.getDate() - 1);
+
+  for (let i = 0; i < 7; i++) {
+    const dateStr = checkDate.toISOString().split('T')[0];
+    if (!allDates.has(dateStr)) {
+      // 发现一个缺卡日，检查再往前一天是否有打卡
+      const prevDate = new Date(checkDate);
+      prevDate.setDate(prevDate.getDate() - 1);
+      const prevDateStr = prevDate.toISOString().split('T')[0];
+      if (allDates.has(prevDateStr)) {
+        // 自动补这一天
+        usedDate = dateStr;
+        usedCount = 1;
+        break;
+      } else {
+        // 如果前一天也没有，不往前找了，因为这不是连续性的缺口，而是已经断开太久
+        break;
+      }
+    }
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  if (usedCount > 0 && usedDate) {
+    // 消耗补签卡并记录
+    db.prepare('UPDATE users SET make_up_cards = make_up_cards - 1 WHERE id = ?').run(userId);
+    db.prepare(
+      'INSERT INTO make_up_card_records (user_id, type, make_up_date, description) VALUES (?, ?, ?, ?)'
+    ).run(userId, 'use', usedDate, `自动补签${usedDate}，连续打卡天数保留`);
+    return { date: usedDate, used: usedCount };
+  }
+
+  return { date: '', used: 0 };
 }
 
 // 打卡
@@ -91,19 +166,8 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
 
   const basePoints = POINTS_MAP[category];
 
-  // 计算连续打卡奖励
-  const consecutiveDays = getConsecutiveDays(userId);
-  let bonusPoints = 0;
-  if (consecutiveDays >= 7) {
-    bonusPoints = 15;
-  } else if (consecutiveDays >= 3) {
-    bonusPoints = 5;
-  } else if (consecutiveDays >= 2) {
-    bonusPoints = 2;
-  }
-
-  const totalPoints = basePoints + bonusPoints;
-
+  // 在事务中处理：先尝试自动补签卡填补缺口，再计算连续天数和打卡
+  let makeUpResult = { date: '', used: 0 };
   const insertCheckin = db.prepare(
     'INSERT INTO checkin_records (user_id, category, weight, location, points, checkin_date) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -113,26 +177,47 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
   const updatePoints = db.prepare('UPDATE users SET points = points + ? WHERE id = ?');
 
   const transaction = db.transaction(() => {
-    const result = insertCheckin.run(userId, category, weight, location, basePoints, today);
+    // 1. 先自动使用补签卡填补连续性缺口
+    makeUpResult = autoUseMakeUpCards(userId);
+
+    // 2. 计算连续打卡奖励（此时补签卡已使用，连续性已衔接
+    const consecutiveDays = getConsecutiveDays(userId);
+    let bonusPoints = 0;
+    if (consecutiveDays >= 7) {
+      bonusPoints = 15;
+    } else if (consecutiveDays >= 3) {
+      bonusPoints = 5;
+    } else if (consecutiveDays >= 2) {
+      bonusPoints = 2;
+    }
+
+    const totalPoints = basePoints + bonusPoints;
+
+    // 3. 插入打卡记录
+    insertCheckin.run(userId, category, weight, location, basePoints, today);
     updatePoints.run(totalPoints, userId);
     insertPointLog.run(userId, basePoints, 'checkin', `${today} 垃圾分类打卡(${CATEGORY_NAMES[category]})`);
     if (bonusPoints > 0) {
       insertPointLog.run(userId, bonusPoints, 'bonus', `连续打卡${consecutiveDays + 1}天奖励`);
     }
-    return result;
+
+    return { consecutiveDays, bonusPoints, totalPoints };
   });
 
-  transaction();
+  const txResult = transaction();
 
-  const user = db.prepare('SELECT points FROM users WHERE id = ?').get(userId) as { points: number };
+  const user = db.prepare('SELECT points, make_up_cards FROM users WHERE id = ?').get(userId) as { points: number; make_up_cards: number };
 
   res.json({
     message: '打卡成功',
-    points: totalPoints,
+    points: txResult.totalPoints,
     basePoints,
-    bonusPoints,
-    consecutiveDays: consecutiveDays + 1,
+    bonusPoints: txResult.bonusPoints,
+    consecutiveDays: txResult.consecutiveDays + 1,
     totalPoints: user.points,
+    makeUpCards: user.make_up_cards,
+    usedMakeUpCard: makeUpResult.used > 0,
+    usedMakeUpDate: makeUpResult.date || null,
   });
 });
 
@@ -206,11 +291,34 @@ router.get('/today', authMiddleware, (req: Request, res: Response) => {
 
   const consecutiveDays = getConsecutiveDays(userId);
 
+  const user = db.prepare('SELECT make_up_cards FROM users WHERE id = ?').get(userId) as { make_up_cards: number };
+
   res.json({
     checkedIn: !!record,
     record: record || null,
     consecutiveDays,
+    makeUpCards: user.make_up_cards,
   });
+});
+
+// 获取补签卡使用记录
+router.get('/makeup-cards', authMiddleware, (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = 20;
+  const offset = (page - 1) * limit;
+
+  const records = db.prepare(
+    'SELECT * FROM make_up_card_records WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  ).all(userId, limit, offset);
+
+  const total = (db.prepare(
+    'SELECT COUNT(*) as cnt FROM make_up_card_records WHERE user_id = ?'
+  ).get(userId) as { cnt: number }).cnt;
+
+  const user = db.prepare('SELECT make_up_cards FROM users WHERE id = ?').get(userId) as { make_up_cards: number };
+
+  res.json({ records, total, page, limit, remaining: user.make_up_cards });
 });
 
 export default router;

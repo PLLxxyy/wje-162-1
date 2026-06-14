@@ -19,6 +19,7 @@ db.exec(`
     role TEXT NOT NULL DEFAULT 'resident',
     avatar TEXT NOT NULL DEFAULT '',
     points INTEGER NOT NULL DEFAULT 0,
+    make_up_cards INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
   );
 
@@ -72,10 +73,31 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS make_up_card_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    product_id INTEGER,
+    type TEXT NOT NULL,
+    make_up_date TEXT,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_checkin_user_date ON checkin_records(user_id, checkin_date);
   CREATE INDEX IF NOT EXISTS idx_exchange_user ON exchange_records(user_id);
   CREATE INDEX IF NOT EXISTS idx_point_logs_user ON point_logs(user_id);
+  CREATE INDEX IF NOT EXISTS idx_make_up_card_user ON make_up_card_records(user_id);
 `);
+
+// ========== 数据库迁移 ==========
+try {
+  db.prepare('ALTER TABLE users ADD COLUMN make_up_cards INTEGER NOT NULL DEFAULT 0').run();
+  console.log('Added make_up_cards column to users table');
+} catch (_e) {
+  // 列已存在，忽略
+}
 
 // ========== Seed 数据 ==========
 const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as { cnt: number }).cnt;
@@ -149,6 +171,7 @@ if (userCount === 0) {
   insertProduct.run('消毒液(瓶)', '84消毒液1000ml', '', 45, 90);
   insertProduct.run('分类指南手册', '图文并茂垃圾分类指南', '', 15, 500);
   insertProduct.run('小盆栽(个)', '绿萝小盆栽净化空气', '', 100, 30);
+  insertProduct.run('补签卡(张)', '连续打卡缺卡补签神器，自动补回缺卡日保住连续天数', '', 80, 500);
 
   // Seed 公告
   const insertAnnouncement = db.prepare(
@@ -168,6 +191,17 @@ if (userCount === 0) {
   );
 
   console.log('Seed data inserted successfully');
+}
+
+// ========== 确保补签卡商品存在 ==========
+const makeUpCardExists = db.prepare(
+  "SELECT id FROM products WHERE name = '补签卡(张)'"
+).get();
+if (!makeUpCardExists) {
+  db.prepare(
+    "INSERT INTO products (name, description, image, price, stock) VALUES (?, ?, ?, ?, ?)"
+  ).run('补签卡(张)', '连续打卡缺卡补签神器，自动补回缺卡日保住连续天数', '', 80, 500);
+  console.log('补签卡商品已添加');
 }
 
 export default db;

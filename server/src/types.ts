@@ -6,6 +6,7 @@ export interface User {
   role: 'resident' | 'admin';
   avatar: string;
   points: number;
+  make_up_cards: number;
   created_at: string;
 }
 
@@ -51,6 +52,16 @@ export interface PointLog {
   user_id: number;
   amount: number;
   type: 'checkin' | 'bonus' | 'exchange';
+  description: string;
+  created_at: string;
+}
+
+export interface MakeUpCardRecord {
+  id: number;
+  user_id: number;
+  product_id: number | null;
+  type: 'obtain' | 'use';
+  make_up_date: string | null;
   description: string;
   created_at: string;
 }

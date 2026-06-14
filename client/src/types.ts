@@ -5,6 +5,7 @@ export interface User {
   role: 'resident' | 'admin';
   avatar: string;
   points: number;
+  make_up_cards: number;
 }
 
 export interface CheckinRecord {
@@ -82,4 +83,15 @@ export const PRODUCT_ICONS: Record<number, string> = {
   8: '💧',
   9: '📖',
   10: '🌱',
+  11: '🎫',
 };
+
+export interface MakeUpCardRecord {
+  id: number;
+  user_id: number;
+  product_id: number | null;
+  type: 'obtain' | 'use';
+  make_up_date: string | null;
+  description: string;
+  created_at: string;
+}

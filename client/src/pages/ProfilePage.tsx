@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
-import { User, CheckinRecord, PointLog, ExchangeRecord, Announcement, CATEGORY_MAP } from '../types';
+import { User, CheckinRecord, PointLog, ExchangeRecord, Announcement, CATEGORY_MAP, MakeUpCardRecord } from '../types';
 
 interface Props {
   user: User;
 }
 
-type Tab = 'records' | 'points' | 'exchange' | 'announcements';
+type Tab = 'records' | 'points' | 'exchange' | 'makeup' | 'announcements';
 
 const TAG_CLASS: Record<string, string> = {
   recyclable: 'tag tag-recyclable',
@@ -16,6 +16,8 @@ const TAG_CLASS: Record<string, string> = {
   checkin: 'tag tag-checkin',
   bonus: 'tag tag-bonus',
   exchange: 'tag tag-exchange',
+  obtain: 'tag tag-bonus',
+  use: 'tag tag-exchange',
 };
 
 export default function ProfilePage({ user }: Props) {
@@ -39,9 +41,17 @@ export default function ProfilePage({ user }: Props) {
             @{user.username} | {user.role === 'admin' ? '管理员' : '居民'}
           </div>
         </div>
-        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#2d8a4e' }}>{user.points}</div>
-          <div style={{ fontSize: 13, color: '#888' }}>当前积分</div>
+        <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#2d8a4e' }}>{user.points}</div>
+            <div style={{ fontSize: 13, color: '#888' }}>当前积分</div>
+          </div>
+          <div style={{ borderTop: '1px dashed #eee', paddingTop: 6 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#ff9800' }}>
+              🎫 {user.make_up_cards || 0}
+            </div>
+            <div style={{ fontSize: 13, color: '#888' }}>补签卡</div>
+          </div>
         </div>
       </div>
 
@@ -50,12 +60,14 @@ export default function ProfilePage({ user }: Props) {
         <button className={`tab-btn ${tab === 'records' ? 'active' : ''}`} onClick={() => setTab('records')}>打卡记录</button>
         <button className={`tab-btn ${tab === 'points' ? 'active' : ''}`} onClick={() => setTab('points')}>积分明细</button>
         <button className={`tab-btn ${tab === 'exchange' ? 'active' : ''}`} onClick={() => setTab('exchange')}>兑换记录</button>
+        <button className={`tab-btn ${tab === 'makeup' ? 'active' : ''}`} onClick={() => setTab('makeup')}>补签卡</button>
         <button className={`tab-btn ${tab === 'announcements' ? 'active' : ''}`} onClick={() => setTab('announcements')}>社区公告</button>
       </div>
 
       {tab === 'records' && <CheckinRecordsTab />}
       {tab === 'points' && <PointLogsTab />}
       {tab === 'exchange' && <ExchangeRecordsTab />}
+      {tab === 'makeup' && <MakeUpCardsTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
     </div>
   );
@@ -267,6 +279,110 @@ function ExchangeRecordsTab() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function MakeUpCardsTab() {
+  const [records, setRecords] = useState<MakeUpCardRecord[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [remaining, setRemaining] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRecords();
+  }, [page]);
+
+  const loadRecords = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getMakeUpCardRecords(page);
+      setRecords(data.records);
+      setTotal(data.total);
+      setRemaining(data.remaining);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  const totalPages = Math.ceil(total / 20);
+
+  const typeNames: Record<string, string> = { obtain: '获得', use: '使用' };
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '12px 0' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 32, fontWeight: 700, color: '#ff9800' }}>🎫 {remaining}</div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>剩余补签卡</div>
+          </div>
+          <div style={{ width: 1, height: 40, background: '#eee' }} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 32, fontWeight: 700, color: '#2d8a4e' }}>
+              {records.filter(r => r.type === 'obtain').reduce((acc) => acc + 1, 0) + (page - 1) * 20}
+            </div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>累计获得</div>
+          </div>
+          <div style={{ width: 1, height: 40, background: '#eee' }} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 32, fontWeight: 700, color: '#e74c3c' }}>
+              {records.filter(r => r.type === 'use').reduce((acc) => acc + 1, 0) + (page - 1) * 20}
+            </div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>累计使用</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>加载中...</div>
+        ) : records.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🎫</div>
+            <p>暂无补签卡记录</p>
+            <p style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
+              去积分商城兑换补签卡，连续打卡不断签！
+            </p>
+          </div>
+        ) : (
+          <>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>补签日期</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.created_at}</td>
+                    <td>
+                      <span className={TAG_CLASS[r.type] || 'tag'}>
+                        {typeNames[r.type] || r.type}
+                      </span>
+                    </td>
+                    <td style={{ color: r.make_up_date ? '#e74c3c' : '#999' }}>
+                      {r.make_up_date || '-'}
+                    </td>
+                    <td>{r.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalPages > 1 && (
+              <div className="pagination">
+                <button disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
+                <span className="page-info">{page} / {totalPages}</span>
+                <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>下一页</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

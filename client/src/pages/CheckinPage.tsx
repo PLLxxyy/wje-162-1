@@ -12,6 +12,9 @@ interface CheckinResult {
   bonusPoints: number;
   consecutiveDays: number;
   totalPoints: number;
+  makeUpCards: number;
+  usedMakeUpCard: boolean;
+  usedMakeUpDate: string | null;
 }
 
 export default function CheckinPage({ onRefreshUser }: Props) {
@@ -23,6 +26,7 @@ export default function CheckinPage({ onRefreshUser }: Props) {
   const [result, setResult] = useState<CheckinResult | null>(null);
   const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(false);
   const [consecutiveDays, setConsecutiveDays] = useState(0);
+  const [makeUpCards, setMakeUpCards] = useState(0);
 
   useEffect(() => {
     checkToday();
@@ -35,6 +39,7 @@ export default function CheckinPage({ onRefreshUser }: Props) {
         setAlreadyCheckedIn(true);
       }
       setConsecutiveDays(data.consecutiveDays);
+      setMakeUpCards(data.makeUpCards);
     } catch { /* ignore */ }
   };
 
@@ -61,6 +66,7 @@ export default function CheckinPage({ onRefreshUser }: Props) {
       setResult(data);
       setAlreadyCheckedIn(true);
       setConsecutiveDays(data.consecutiveDays);
+      setMakeUpCards(data.makeUpCards);
       await onRefreshUser();
     } catch (err: any) {
       setError(err.message || '打卡失败');
@@ -88,12 +94,22 @@ export default function CheckinPage({ onRefreshUser }: Props) {
           {result.bonusPoints > 0 && (
             <div className="detail bonus">连续打卡奖励：+{result.bonusPoints}</div>
           )}
+          {result.usedMakeUpCard && (
+            <div className="detail" style={{ color: '#ff9800', fontWeight: 600 }}>
+              🎫 自动使用补签卡，补回 {result.usedMakeUpDate}，保住连续天数！
+            </div>
+          )}
           <div className="detail" style={{ fontWeight: 600, fontSize: 18, marginTop: 12 }}>
             本次获得：{result.points} 积分
           </div>
           <div className="detail" style={{ marginTop: 8 }}>
             当前总积分：{result.totalPoints}
           </div>
+          {makeUpCards > 0 && (
+            <div className="detail" style={{ marginTop: 4, color: '#666' }}>
+              剩余补签卡：{makeUpCards} 张
+            </div>
+          )}
           <div className="streak-badge active" style={{ marginTop: 16 }}>
             🔥 连续打卡 {result.consecutiveDays} 天
           </div>
@@ -118,6 +134,11 @@ export default function CheckinPage({ onRefreshUser }: Props) {
           {consecutiveDays > 0 && (
             <div className="streak-badge active" style={{ marginTop: 16 }}>
               🔥 连续打卡 {consecutiveDays} 天
+            </div>
+          )}
+          {makeUpCards > 0 && (
+            <div className="detail" style={{ marginTop: 16, color: '#666' }}>
+              🎫 剩余补签卡：{makeUpCards} 张
             </div>
           )}
         </div>

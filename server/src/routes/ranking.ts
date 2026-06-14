@@ -58,21 +58,28 @@ function getConsecutiveDays(userId: number): number {
     "SELECT DISTINCT checkin_date FROM checkin_records WHERE user_id = ? ORDER BY checkin_date DESC"
   ).all(userId) as { checkin_date: string }[];
 
-  if (records.length === 0) return 0;
+  const makeUpRecords = db.prepare(
+    "SELECT DISTINCT make_up_date FROM make_up_card_records WHERE user_id = ? AND type = 'use' AND make_up_date IS NOT NULL ORDER BY make_up_date DESC"
+  ).all(userId) as { make_up_date: string }[];
+
+  const allDates = new Set([
+    ...records.map((r) => r.checkin_date),
+    ...makeUpRecords.map((r) => r.make_up_date!),
+  ]);
+
+  if (allDates.size === 0) return 0;
 
   const today = getLocalDate();
-  const dates = records.map((r) => r.checkin_date);
-
   let count = 0;
   let checkDate = new Date(today);
 
-  if (!dates.includes(today)) {
+  if (!allDates.has(today)) {
     checkDate.setDate(checkDate.getDate() - 1);
   }
 
   for (let i = 0; i < 365; i++) {
     const dateStr = checkDate.toISOString().split('T')[0];
-    if (dates.includes(dateStr)) {
+    if (allDates.has(dateStr)) {
       count++;
       checkDate.setDate(checkDate.getDate() - 1);
     } else {

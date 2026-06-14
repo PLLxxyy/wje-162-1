@@ -31,28 +31,28 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   // Auth
   login: (username: string, password: string) =>
-    request<{ token: string; user: { id: number; username: string; nickname: string; role: string; points: number; avatar: string } }>(
+    request<{ token: string; user: { id: number; username: string; nickname: string; role: string; points: number; make_up_cards: number; avatar: string } }>(
       '/auth/login',
       { method: 'POST', body: JSON.stringify({ username, password }) }
     ),
 
   register: (username: string, password: string, nickname: string) =>
-    request<{ token: string; user: { id: number; username: string; nickname: string; role: string; points: number; avatar: string } }>(
+    request<{ token: string; user: { id: number; username: string; nickname: string; role: string; points: number; make_up_cards: number; avatar: string } }>(
       '/auth/register',
       { method: 'POST', body: JSON.stringify({ username, password, nickname }) }
     ),
 
-  getMe: () => request<{ user: { id: number; username: string; nickname: string; role: string; points: number; avatar: string } }>('/auth/me'),
+  getMe: () => request<{ user: { id: number; username: string; nickname: string; role: string; points: number; make_up_cards: number; avatar: string } }>('/auth/me'),
 
   // Checkin
   doCheckin: (category: string, weight: number, location: string) =>
-    request<{ message: string; points: number; basePoints: number; bonusPoints: number; consecutiveDays: number; totalPoints: number }>(
+    request<{ message: string; points: number; basePoints: number; bonusPoints: number; consecutiveDays: number; totalPoints: number; makeUpCards: number; usedMakeUpCard: boolean; usedMakeUpDate: string | null }>(
       '/checkin',
       { method: 'POST', body: JSON.stringify({ category, weight, location }) }
     ),
 
   getCheckinToday: () =>
-    request<{ checkedIn: boolean; record: any; consecutiveDays: number }>('/checkin/today'),
+    request<{ checkedIn: boolean; record: any; consecutiveDays: number; makeUpCards: number }>('/checkin/today'),
 
   getCheckinCalendar: (year: number, month: number) =>
     request<{ records: any[]; consecutiveDays: number; year: number; month: number }>(
@@ -64,6 +64,9 @@ export const api = {
 
   getPointLogs: (page: number = 1) =>
     request<{ logs: any[]; total: number; page: number; limit: number }>(`/checkin/points?page=${page}`),
+
+  getMakeUpCardRecords: (page: number = 1) =>
+    request<{ records: any[]; total: number; page: number; limit: number; remaining: number }>(`/checkin/makeup-cards?page=${page}`),
 
   // Shop
   getProducts: () => request<{ products: any[] }>('/shop/products'),

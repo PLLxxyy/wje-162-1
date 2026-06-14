@@ -34,11 +34,13 @@ router.post('/exchange', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
-  const user = db.prepare('SELECT points FROM users WHERE id = ?').get(userId) as { points: number };
+  const user = db.prepare('SELECT points, make_up_cards FROM users WHERE id = ?').get(userId) as { points: number; make_up_cards: number };
   if (user.points < product.price) {
     res.status(400).json({ error: `积分不足，需要${product.price}积分，当前${user.points}积分` });
     return;
   }
+
+  const isMakeUpCard = product.name.startsWith('补签卡');
 
   const transaction = db.transaction(() => {
     db.prepare('UPDATE users SET points = points - ? WHERE id = ?').run(product.price, userId);
@@ -49,15 +51,23 @@ router.post('/exchange', authMiddleware, (req: Request, res: Response) => {
     db.prepare(
       'INSERT INTO point_logs (user_id, amount, type, description) VALUES (?, ?, ?, ?)'
     ).run(userId, -product.price, 'exchange', `兑换商品：${product.name}`);
+
+    if (isMakeUpCard) {
+      db.prepare('UPDATE users SET make_up_cards = make_up_cards + 1 WHERE id = ?').run(userId);
+      db.prepare(
+        'INSERT INTO make_up_card_records (user_id, product_id, type, description) VALUES (?, ?, ?, ?)'
+      ).run(userId, productId, 'obtain', `积分兑换获得补签卡（${product.price}积分）`);
+    }
   });
 
   transaction();
 
-  const updatedUser = db.prepare('SELECT points FROM users WHERE id = ?').get(userId) as { points: number };
+  const updatedUser = db.prepare('SELECT points, make_up_cards FROM users WHERE id = ?').get(userId) as { points: number; make_up_cards: number };
 
   res.json({
     message: `成功兑换「${product.name}」`,
     points: updatedUser.points,
+    makeUpCards: updatedUser.make_up_cards,
   });
 });
 

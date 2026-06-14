@@ -42,6 +42,7 @@ router.post('/register', (req: Request, res: Response) => {
       nickname,
       role: 'resident',
       points: 0,
+      make_up_cards: 0,
       avatar: '',
     },
   });
@@ -78,6 +79,7 @@ router.post('/login', (req: Request, res: Response) => {
       nickname: user.nickname,
       role: user.role,
       points: user.points,
+      make_up_cards: user.make_up_cards,
       avatar: user.avatar,
     },
   });
@@ -93,7 +95,7 @@ router.get('/me', (req: Request, res: Response) => {
 
   try {
     const payload = verifyToken(authHeader.substring(7));
-    const user = db.prepare('SELECT id, username, nickname, role, avatar, points, created_at FROM users WHERE id = ?').get(payload.userId) as Omit<User, 'password'> | undefined;
+    const user = db.prepare('SELECT id, username, nickname, role, avatar, points, make_up_cards, created_at FROM users WHERE id = ?').get(payload.userId) as Omit<User, 'password'> | undefined;
     if (!user) {
       res.status(404).json({ error: '用户不存在' });
       return;

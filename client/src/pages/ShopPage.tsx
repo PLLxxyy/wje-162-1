@@ -74,12 +74,30 @@ export default function ShopPage({ user, onRefreshUser }: Props) {
         {products.map((product) => {
           const icon = PRODUCT_ICONS[product.id] || '🎁';
           const canAfford = user.points >= product.price;
+          const isMakeUpCard = product.name.startsWith('补签卡');
           return (
             <div key={product.id} className="product-card">
               <div className="product-icon">{icon}</div>
               <div className="product-body">
-                <div className="product-name">{product.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div className="product-name">{product.name}</div>
+                  {isMakeUpCard && (
+                    <span style={{
+                      fontSize: 11,
+                      background: 'linear-gradient(135deg, #ff9800, #f57c00)',
+                      color: 'white',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      fontWeight: 600,
+                    }}>热门</span>
+                  )}
+                </div>
                 <div className="product-desc">{product.description}</div>
+                {isMakeUpCard && (
+                  <div style={{ fontSize: 12, color: '#ff9800', marginTop: 4 }}>
+                    🎫 当前持有：{user.make_up_cards || 0} 张
+                  </div>
+                )}
                 <div className="product-footer">
                   <div>
                     <div className="product-price">{product.price} <small>积分</small></div>
