@@ -63,15 +63,14 @@ function getConsecutiveDays(userId: number): number {
   return count;
 }
 
-// 自动使用补签卡填补缺卡日，返回使用的补签卡详情列表
-function autoUseMakeUpCards(userId: number): { date: string; used: number } {
+// 自动使用补签卡填补缺卡日，返回使用的补签卡详情
+function autoUseMakeUpCards(userId: number): { usedDates: string[]; usedCount: number } {
   const user = db.prepare('SELECT make_up_cards FROM users WHERE id = ?').get(userId) as { make_up_cards: number };
   let cardsLeft = user.make_up_cards;
-  let usedCount = 0;
-  let usedDate: string | null = null;
+  const usedDates: string[] = [];
 
   if (cardsLeft <= 0) {
-    return { date: '', used: 0 };
+    return { usedDates: [], usedCount: 0 };
   }
 
   // 获取所有打卡日期和补签日期
@@ -89,47 +88,54 @@ function autoUseMakeUpCards(userId: number): { date: string; used: number } {
   ]);
 
   if (allDates.size === 0) {
-    return { date: '', used: 0 };
+    return { usedDates: [], usedCount: 0 };
   }
 
   const today = getLocalDate();
   const todayDate = new Date(today);
 
-  // 检查昨天是否缺卡（如果今天没打卡，则检查前天），如果缺卡且再前一天有打卡，就补
+  // 从昨天开始向前检查，找到所有连续缺卡日，直到遇到已打卡日或补签日
   let checkDate = new Date(todayDate);
-  // 从昨天开始向前找
-  checkDate.setDate(checkDate.getDate() - 1);
+  checkDate.setDate(checkDate.getDate() - 1); // 从昨天开始
 
-  for (let i = 0; i < 7; i++) {
+  let hasContinuousStart = false;
+
+  // 最多补30天，避免无限制
+  for (let i = 0; i < 30; i++) {
     const dateStr = checkDate.toISOString().split('T')[0];
-    if (!allDates.has(dateStr)) {
-      // 发现一个缺卡日，检查再往前一天是否有打卡
-      const prevDate = new Date(checkDate);
-      prevDate.setDate(prevDate.getDate() - 1);
-      const prevDateStr = prevDate.toISOString().split('T')[0];
-      if (allDates.has(prevDateStr)) {
-        // 自动补这一天
-        usedDate = dateStr;
-        usedCount = 1;
-        break;
-      } else {
-        // 如果前一天也没有，不往前找了，因为这不是连续性的缺口，而是已经断开太久
-        break;
-      }
+    if (allDates.has(dateStr)) {
+      // 遇到已打卡/已补签的日期，说明断签前有连续打卡，有意义
+      hasContinuousStart = true;
+      break;
     }
+
+    if (cardsLeft > 0) {
+      usedDates.push(dateStr);
+      cardsLeft--;
+    } else {
+      // 补签卡用完了，但还没遇到打卡日，说明断签太久，不补
+      break;
+    }
+
     checkDate.setDate(checkDate.getDate() - 1);
   }
 
-  if (usedCount > 0 && usedDate) {
-    // 消耗补签卡并记录
-    db.prepare('UPDATE users SET make_up_cards = make_up_cards - 1 WHERE id = ?').run(userId);
-    db.prepare(
-      'INSERT INTO make_up_card_records (user_id, type, make_up_date, description) VALUES (?, ?, ?, ?)'
-    ).run(userId, 'use', usedDate, `自动补签${usedDate}，连续打卡天数保留`);
-    return { date: usedDate, used: usedCount };
+  if (!hasContinuousStart || usedDates.length === 0) {
+    return { usedDates: [], usedCount: 0 };
   }
 
-  return { date: '', used: 0 };
+  // 消耗补签卡并记录每条使用记录
+  db.prepare('UPDATE users SET make_up_cards = make_up_cards - ? WHERE id = ?').run(usedDates.length, userId);
+
+  const insertRecord = db.prepare(
+    'INSERT INTO make_up_card_records (user_id, type, make_up_date, description) VALUES (?, ?, ?, ?)'
+  );
+
+  for (const dateStr of usedDates) {
+    insertRecord.run(userId, 'use', dateStr, `自动补签${dateStr}，连续打卡天数保留`);
+  }
+
+  return { usedDates, usedCount: usedDates.length };
 }
 
 // 打卡
@@ -167,7 +173,7 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
   const basePoints = POINTS_MAP[category];
 
   // 在事务中处理：先尝试自动补签卡填补缺口，再计算连续天数和打卡
-  let makeUpResult = { date: '', used: 0 };
+  let makeUpResult = { usedDates: [] as string[], usedCount: 0 };
   const insertCheckin = db.prepare(
     'INSERT INTO checkin_records (user_id, category, weight, location, points, checkin_date) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -216,8 +222,9 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
     consecutiveDays: txResult.consecutiveDays + 1,
     totalPoints: user.points,
     makeUpCards: user.make_up_cards,
-    usedMakeUpCard: makeUpResult.used > 0,
-    usedMakeUpDate: makeUpResult.date || null,
+    usedMakeUpCard: makeUpResult.usedCount > 0,
+    usedMakeUpCount: makeUpResult.usedCount,
+    usedMakeUpDates: makeUpResult.usedDates,
   });
 });
 
@@ -318,7 +325,15 @@ router.get('/makeup-cards', authMiddleware, (req: Request, res: Response) => {
 
   const user = db.prepare('SELECT make_up_cards FROM users WHERE id = ?').get(userId) as { make_up_cards: number };
 
-  res.json({ records, total, page, limit, remaining: user.make_up_cards });
+  const totalObtain = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM make_up_card_records WHERE user_id = ? AND type = 'obtain'"
+  ).get(userId) as { cnt: number }).cnt;
+
+  const totalUse = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM make_up_card_records WHERE user_id = ? AND type = 'use'"
+  ).get(userId) as { cnt: number }).cnt;
+
+  res.json({ records, total, page, limit, remaining: user.make_up_cards, totalObtain, totalUse });
 });
 
 export default router;

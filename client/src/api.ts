@@ -46,7 +46,7 @@ export const api = {
 
   // Checkin
   doCheckin: (category: string, weight: number, location: string) =>
-    request<{ message: string; points: number; basePoints: number; bonusPoints: number; consecutiveDays: number; totalPoints: number; makeUpCards: number; usedMakeUpCard: boolean; usedMakeUpDate: string | null }>(
+    request<{ message: string; points: number; basePoints: number; bonusPoints: number; consecutiveDays: number; totalPoints: number; makeUpCards: number; usedMakeUpCard: boolean; usedMakeUpCount: number; usedMakeUpDates: string[] }>(
       '/checkin',
       { method: 'POST', body: JSON.stringify({ category, weight, location }) }
     ),
@@ -66,7 +66,7 @@ export const api = {
     request<{ logs: any[]; total: number; page: number; limit: number }>(`/checkin/points?page=${page}`),
 
   getMakeUpCardRecords: (page: number = 1) =>
-    request<{ records: any[]; total: number; page: number; limit: number; remaining: number }>(`/checkin/makeup-cards?page=${page}`),
+    request<{ records: any[]; total: number; page: number; limit: number; remaining: number; totalObtain: number; totalUse: number }>(`/checkin/makeup-cards?page=${page}`),
 
   // Shop
   getProducts: () => request<{ products: any[] }>('/shop/products'),

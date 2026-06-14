@@ -14,7 +14,8 @@ interface CheckinResult {
   totalPoints: number;
   makeUpCards: number;
   usedMakeUpCard: boolean;
-  usedMakeUpDate: string | null;
+  usedMakeUpCount: number;
+  usedMakeUpDates: string[];
 }
 
 export default function CheckinPage({ onRefreshUser }: Props) {
@@ -95,8 +96,13 @@ export default function CheckinPage({ onRefreshUser }: Props) {
             <div className="detail bonus">连续打卡奖励：+{result.bonusPoints}</div>
           )}
           {result.usedMakeUpCard && (
-            <div className="detail" style={{ color: '#ff9800', fontWeight: 600 }}>
-              🎫 自动使用补签卡，补回 {result.usedMakeUpDate}，保住连续天数！
+            <div style={{ marginTop: 12, textAlign: 'left', background: '#fff8e1', padding: '12px 16px', borderRadius: 8, width: '100%' }}>
+              <div style={{ color: '#ff9800', fontWeight: 600, marginBottom: 6 }}>
+                🎫 自动使用 {result.usedMakeUpCount} 张补签卡，恢复连续打卡！
+              </div>
+              <div style={{ fontSize: 13, color: '#666' }}>
+                补回日期：{result.usedMakeUpDates.join('、')}
+              </div>
             </div>
           )}
           <div className="detail" style={{ fontWeight: 600, fontSize: 18, marginTop: 12 }}>

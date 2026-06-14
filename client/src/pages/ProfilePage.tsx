@@ -288,6 +288,8 @@ function MakeUpCardsTab() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [remaining, setRemaining] = useState(0);
+  const [totalObtain, setTotalObtain] = useState(0);
+  const [totalUse, setTotalUse] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -301,6 +303,8 @@ function MakeUpCardsTab() {
       setRecords(data.records);
       setTotal(data.total);
       setRemaining(data.remaining);
+      setTotalObtain(data.totalObtain);
+      setTotalUse(data.totalUse);
     } catch { /* ignore */ }
     setLoading(false);
   };
@@ -320,14 +324,14 @@ function MakeUpCardsTab() {
           <div style={{ width: 1, height: 40, background: '#eee' }} />
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#2d8a4e' }}>
-              {records.filter(r => r.type === 'obtain').reduce((acc) => acc + 1, 0) + (page - 1) * 20}
+              {totalObtain}
             </div>
             <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>累计获得</div>
           </div>
           <div style={{ width: 1, height: 40, background: '#eee' }} />
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#e74c3c' }}>
-              {records.filter(r => r.type === 'use').reduce((acc) => acc + 1, 0) + (page - 1) * 20}
+              {totalUse}
             </div>
             <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>累计使用</div>
           </div>
